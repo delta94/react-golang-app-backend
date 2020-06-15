@@ -16,10 +16,17 @@ import (
 func main() {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
+	portEnv := os.Getenv("PORT")
+	var port string
+	if portEnv != "" {
+		port = portEnv
+	} else {
+		port = ":4000"
+	}
 	c.CreateConnection(dbString)
 	router := r.Middleware()
 	handler := cors.AllowAll().Handler(router)
 
 	fmt.Println("Server start on localhost:4000")
-	http.ListenAndServe(":4000", handler)
+	http.ListenAndServe(port, handler)
 }
