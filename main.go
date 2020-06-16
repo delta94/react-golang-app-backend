@@ -27,6 +27,6 @@ func main() {
 	router := r.Middleware()
 	handler := cors.AllowAll().Handler(router)
 
-	fmt.Println("Server start on localhost:4000")
+	fmt.Println("Server start on localhost" + port)
 	http.ListenAndServe(port, handler)
 }
