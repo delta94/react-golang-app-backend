@@ -17,10 +17,9 @@ func main() {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	port := os.Getenv("PORT")
-	addr := os.Getenv("ADDRESS")
 	c.CreateConnection(dbString)
 	router := r.Middleware()
 	handler := cors.AllowAll().Handler(router)
 
-	log.Fatal(http.ListenAndServe(addr + ":" + port, handler))
+	log.Fatal(http.ListenAndServe(":" + port, handler))
 }
