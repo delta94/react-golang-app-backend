@@ -1,1 +1,1 @@
-web: siteGolang
+web: bin/siteGolang
