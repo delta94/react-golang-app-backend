@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 
@@ -16,17 +15,10 @@ import (
 func main() {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
-	portEnv := os.Getenv("PORT")
-	var port string
-	if portEnv != "" {
-		port = portEnv
-	} else {
-		port = ":4000"
-	}
+	port := os.Getenv("PORT")
 	c.CreateConnection(dbString)
 	router := r.Middleware()
 	handler := cors.AllowAll().Handler(router)
 
-	fmt.Println("Server start on localhost" + port)
 	http.ListenAndServe(port, handler)
 }
