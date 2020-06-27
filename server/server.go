@@ -12,7 +12,8 @@ func CreateConnection(connString string) (db *sql.DB)  {
 	db, err := sql.Open("mysql", connString)
 	if err != nil {
 		log.Print("Error: ", err)
+	} else {
+		log.Print("Connected to database")
 	}
-	log.Print("Connected to database")
 	return db
 }
