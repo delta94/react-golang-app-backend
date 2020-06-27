@@ -22,5 +22,5 @@ func main() {
 	router := r.Middleware()
 	handler := cors.AllowAll().Handler(router)
 
-	log.Fatal(http.ListenAndServe(addr + ":" + port, handler))
+	log.Fatal(http.ListenAndServe(addr + port, handler))
 }
