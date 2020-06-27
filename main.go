@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 	"os"
 
@@ -20,5 +21,5 @@ func main() {
 	router := r.Middleware()
 	handler := cors.AllowAll().Handler(router)
 
-	http.ListenAndServe(port, handler)
+	log.Fatal(http.ListenAndServe(port, handler))
 }
