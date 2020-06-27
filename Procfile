@@ -1,1 +1,1 @@
-web: siteGolang
+web: github.com/marceloOliveira/siteGolangsiteGolang
