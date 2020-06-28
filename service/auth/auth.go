@@ -91,12 +91,12 @@ func AutenticationJWT(w http.ResponseWriter, r *http.Request)  {
 func SignUp(w http.ResponseWriter, r *http.Request)  {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
-	log.Print("string ", dbString)
 	db := d.CreateConnection(dbString)
 	w.Header().Set("Content-Type", "application/json")
 
 	stmt, err := db.Prepare("INSERT INTO users(userID, username, password, fullName, avatar) VALUES(?, ?, ?, ?, ?)")
 	if err != nil {
+		log.Print("string ", dbString)
 		response := a.ErrorResponse("Error in query", err)
 		w.WriteHeader(500)
 		w.Write(response)
