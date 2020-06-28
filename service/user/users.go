@@ -30,7 +30,7 @@ func SelectListOfUser(w http.ResponseWriter, r *http.Request) {
 	db := d.CreateConnection(dbString)
 	w.Header().Set("Content-Type", "application/json")
 
-	selectDB, err := db.Query("SELECT * FROM mp14jxypt0bem0vd.users")
+	selectDB, err := db.Query("SELECT * FROM users")
 	if err != nil {
 		response := a.ErrorResponse("Error in query", err)
 		w.WriteHeader(500)
