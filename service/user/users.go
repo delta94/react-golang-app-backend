@@ -2,6 +2,7 @@ package user
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 
@@ -27,6 +28,7 @@ func SelectListOfUser(w http.ResponseWriter, r *http.Request) {
 	
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
+	log.Print("string ", dbString)
 	db := d.CreateConnection(dbString)
 	w.Header().Set("Content-Type", "application/json")
 
