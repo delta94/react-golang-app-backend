@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/dgrijalva/jwt-go"
 )
@@ -82,7 +83,7 @@ func ResponseWithToken(msg string, token string, user interface{}) (resp []byte)
 
 //VerifyToken verification of JWT token
 func VerifyToken(r *http.Request) (status bool) {
-	auth := r.Header.Get("Authorization")
+	auth := strings.Replace(r.Header.Get("Authorization"), "Bearer ", "", 1)
 	if auth == "" {
 		return false
 	}

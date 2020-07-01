@@ -18,7 +18,11 @@ import (
 )
 
 //JWT key
-var jwtKey = []byte("secretKeyApp")
+func getJWTkey() ([]byte) {
+	godotenv.Load(".env")
+	jwtKey := []byte(os.Getenv("JWT_KEY"))
+	return jwtKey
+}
 
 //AutenticationJWT generate JWT token
 func AutenticationJWT(w http.ResponseWriter, r *http.Request)  {
@@ -66,7 +70,7 @@ func AutenticationJWT(w http.ResponseWriter, r *http.Request)  {
 		return
 	}
 	
-	expirationTime := time.Now().Add(1440 * time.Minute)
+	expirationTime := time.Now().Add(5000 * time.Minute)
 	claims := &u.Claims{
 		Username: user.Username,
 		StandardClaims: jwt.StandardClaims{
@@ -74,6 +78,7 @@ func AutenticationJWT(w http.ResponseWriter, r *http.Request)  {
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	jwtKey := getJWTkey()
 	tokenString, err := token.SignedString(jwtKey)
 	if err != nil {
 		response := a.ErrorResponse("Error generate jwt token", err)
