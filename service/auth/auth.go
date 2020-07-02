@@ -90,6 +90,7 @@ func AutenticationJWT(w http.ResponseWriter, r *http.Request)  {
 	response := a.ResponseWithToken("Sucess token generated", tokenString, user)
 	w.WriteHeader(200)
 	w.Write(response)
+	db.Close()
 }
 
 //SignUp function to add user to database withou jwt
@@ -141,6 +142,7 @@ func SignUp(w http.ResponseWriter, r *http.Request)  {
 	response := a.SucessResponse("New user add in database")
 	w.WriteHeader(200)
 	w.Write(response)
+	db.Close()
 }
 
 //ListUsername get username from the database
@@ -177,4 +179,5 @@ func ListUsername(w http.ResponseWriter, r *http.Request)  {
 	response := a.ResponseWithJSON("Success in select from database", res)
 	w.WriteHeader(200)
 	w.Write(response)
+	db.Close()
 }

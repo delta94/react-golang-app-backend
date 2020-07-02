@@ -56,6 +56,7 @@ func SelectProductList(w http.ResponseWriter, r *http.Request)  {
 	response := a.ResponseWithJSON("Sucess in select", res)
 	w.WriteHeader(200)
 	w.Write(response)
+	db.Close()
 }
 
 //SelectProduct specific product
