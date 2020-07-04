@@ -129,7 +129,7 @@ func InsertUser(w http.ResponseWriter, r *http.Request) {
 	db := d.CreateConnection(dbString)
 
 	w.Header().Set("Content-Type", "application/json")
-	stmt, err := db.Prepare("INSERT INTO users(userID, username, password, fullName, avatar) VALUES(?, ?, ?, ?, ?)")
+	stmt, err := db.Prepare("INSERT INTO users(userID, username, password, fullName, avatar, createdAt, modifiedAt) VALUES(?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		response := a.ErrorResponse("Error in query", err)
 		w.WriteHeader(500)

@@ -2,16 +2,18 @@ package auth
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/dgrijalva/jwt-go"
 	u "github.com/marceloOliveira/siteGolang/models"
 	d "github.com/marceloOliveira/siteGolang/server"
 	a "github.com/marceloOliveira/siteGolang/utility"
@@ -100,27 +102,29 @@ func SignUp(w http.ResponseWriter, r *http.Request)  {
 	db := d.CreateConnection(dbString)
 	w.Header().Set("Content-Type", "application/json")
 
-	stmt, err := db.Prepare("INSERT INTO users(userID, username, password, fullName, avatar) VALUES(?, ?, ?, ?, ?)")
+	maxSize := int64(3 * 1024 * 1024)
+	err := r.ParseMultipartForm(maxSize)
 	if err != nil {
-		log.Print("string ", dbString)
+		response := a.ErrorResponse("Failed to parse multipart form", err)
+		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+	useridGenerate := uuid.Must(uuid.NewRandom())
+	var user u.User
+	user.UserID = useridGenerate
+	user.Username = r.FormValue("username")
+	user.Fullname = r.FormValue("fullname")
+
+	stmt, err := db.Prepare("INSERT INTO users(userID, username, password, fullName, avatar, createdAt, modifiedAt) VALUES(?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
 		response := a.ErrorResponse("Error in query", err)
 		w.WriteHeader(500)
 		w.Write(response)
 		return
 	}
 	
-	useridGenerate := uuid.Must(uuid.NewRandom())
-	var user u.User
-	error := json.NewDecoder(r.Body).Decode(&user)
-	if error != nil {
-		response := a.ErrorResponse("Error in body fields", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
-	}
-
-	user.UserID = useridGenerate
-	bytePassword := []byte(user.Password)
+	bytePassword := []byte(r.FormValue("password"))
 	hashPassword, err := bcrypt.GenerateFromPassword(bytePassword, bcrypt.DefaultCost)
     if err != nil {
 		response := a.ErrorResponse("Error generating hash password", err)
@@ -129,8 +133,41 @@ func SignUp(w http.ResponseWriter, r *http.Request)  {
         return
 	}
 	user.Password = string(hashPassword)
+	user.CreatedAt = time.Now()
 
-	_, err = stmt.Exec(user.UserID, user.Username, user.Password, user.Fullname, user.Avatar)
+	avatarFile, fileHeader, err := r.FormFile("avatar")
+	if err != nil {
+		response := a.ErrorResponse("Failed to get upload file", err)
+		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+	defer avatarFile.Close()
+
+	secretKey := os.Getenv("AWS_SECRET_KEY")
+	secretID := os.Getenv("AWS_SECRET_ID")
+	region := os.Getenv("AWS_REGION")
+	session, err := session.NewSession(&aws.Config{
+		Region: aws.String(region),
+		Credentials: credentials.NewStaticCredentials(secretID, secretKey, ""),
+	})
+	if err != nil {
+		response := a.ErrorResponse("Failed to set session on AWS S3", err)
+		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+
+	fileName, err := a.UploadImageToS3(session, avatarFile, fileHeader)
+	if err != nil {
+		response := a.ErrorResponse("Failed to upload Image to S3", err)
+		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+	user.Avatar = fileName
+
+	_, err = stmt.Exec(user.UserID, user.Username, user.Password, user.Fullname, user.Avatar, user.CreatedAt, user.ModifiedAt)
 	if err != nil {
 		response := a.ErrorResponse("Error in insert", err)
 		w.WriteHeader(500)
@@ -161,6 +198,7 @@ func ListUsername(w http.ResponseWriter, r *http.Request)  {
 
 	defer query.Close()
 	var res = []u.User{}
+	var data []string
 
 	for query.Next() {
 		var user u.User
@@ -176,7 +214,11 @@ func ListUsername(w http.ResponseWriter, r *http.Request)  {
 		res = append(res, user)
 	}
 
-	response := a.ResponseWithJSON("Success in select from database", res)
+	for i := 0; i < len(res); i++ {
+		data = append(data, res[i].Username)
+	}
+
+	response := a.ResponseWithJSON("Success in select from database", data)
 	w.WriteHeader(200)
 	w.Write(response)
 	db.Close()

@@ -1,6 +1,8 @@
 package models
 
 import (
+	"time"
+
 	"github.com/jmoiron/sqlx/types"
 	"github.com/segmentio/ksuid"
 )
@@ -18,4 +20,6 @@ type Product struct {
 	Value			float64				`db:"productValue" json:"Value"`
 	Info			*types.JSONText		`db:"productInfo" json:"Info"`
 	CategoryID		int					`db:"categoryID" json:"CategoryID"`
+	CreatedAt		time.Time			`db:"createdAt" json:"createdAt"`
+	ModifiedAt		time.Time			`db:"modifiedAt" json:"modifiedAt"`
 }
