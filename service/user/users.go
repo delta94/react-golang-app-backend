@@ -1,12 +1,17 @@
 package user
 
 import (
-	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/google/uuid"
 	u "github.com/marceloOliveira/siteGolang/models"
 	d "github.com/marceloOliveira/siteGolang/server"
@@ -28,7 +33,6 @@ func SelectListOfUser(w http.ResponseWriter, r *http.Request) {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
-	w.Header().Set("Content-Type", "application/json")
 
 	selectDB, err := db.Query("SELECT * FROM users")
 	if err != nil {
@@ -42,15 +46,18 @@ func SelectListOfUser(w http.ResponseWriter, r *http.Request) {
 
 	for selectDB.Next() {
 		var user u.User
-
-		err = selectDB.Scan(&user.UserID, &user.Username, &user.Password, &user.Fullname, &user.Avatar)
+		var createdAt []uint8
+		var modifiedAt []uint8
+		err = selectDB.Scan(&user.UserID, &user.Username, &user.Password, &user.Fullname, &user.Avatar, &createdAt, &modifiedAt)
 		if err != nil {
 			response := a.ErrorResponse("Error in select", err)
+			fmt.Println(err)
 			w.WriteHeader(500)
 			w.Write(response)
 			return
 		}
-
+		user.CreatedAt, _ = a.ConvertToTime(createdAt)
+		user.ModifiedAt, _ = a.ConvertToTime(modifiedAt)
 		res = append(res, user)
 	}
 	defer db.Close()
@@ -74,20 +81,11 @@ func SelectUser(w http.ResponseWriter, r *http.Request)  {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
-	w.Header().Set("Content-Type", "application/json")
 
-	var userID u.User
-	error := json.NewDecoder(r.Body).Decode(&userID)
-	if error != nil {
-		response := a.ErrorResponse("Error in body fields", error)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
-	}
-
-	selectDB, err := db.Query("SELECT * FROM users WHERE userID = ?", userID.UserID)
+	vars := mux.Vars(r)
+	selectDB, err := db.Query("SELECT * FROM users WHERE userID = ?", vars["id"])
 	if err != nil {
-		response := a.ErrorResponse("Error in query", error)
+		response := a.ErrorResponse("Error in query", err)
 		w.WriteHeader(500)
 		w.Write(response)
 		return
@@ -97,14 +95,17 @@ func SelectUser(w http.ResponseWriter, r *http.Request)  {
 	var res []u.User
 	for selectDB.Next() {
 		var user u.User
-		err = selectDB.Scan(&user.UserID, &user.Username, &user.Password, &user.Fullname, &user.Avatar)
+		var createdAt []uint8
+		var modifiedAt []uint8
+		err = selectDB.Scan(&user.UserID, &user.Username, &user.Password, &user.Fullname, &user.Avatar, &createdAt, &modifiedAt)
 		if err != nil {
 			response := a.ErrorResponse("Error in select", err)
 			w.WriteHeader(500)
 			w.Write(response)
 			return
 		}
-
+		user.CreatedAt, _ = a.ConvertToTime(createdAt)
+		user.ModifiedAt, _ = a.ConvertToTime(modifiedAt)
 		res = append(res, user)
 	}
 
@@ -127,28 +128,23 @@ func InsertUser(w http.ResponseWriter, r *http.Request) {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
+	w.Header().Set("Content-Type", "multipart/form-data")
 
-	w.Header().Set("Content-Type", "application/json")
-	stmt, err := db.Prepare("INSERT INTO users(userID, username, password, fullName, avatar, createdAt, modifiedAt) VALUES(?, ?, ?, ?, ?, ?, ?)")
+	maxSize := int64(3 * 1024 * 1024)
+	err := r.ParseMultipartForm(maxSize)
 	if err != nil {
-		response := a.ErrorResponse("Error in query", err)
+		response := a.ErrorResponse("Failed to parse multipart form", err)
 		w.WriteHeader(500)
 		w.Write(response)
 		return
 	}
-	
-	useridGenerate := uuid.Must(uuid.NewRandom())
 	var user u.User
-	error := json.NewDecoder(r.Body).Decode(&user)
-	if error != nil {
-		response := a.ErrorResponse("Error in body fields", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
-	}
-
+	useridGenerate := uuid.Must(uuid.NewRandom())
 	user.UserID = useridGenerate
-	bytePassword := []byte(user.Password)
+	user.Username = r.FormValue("username")
+	user.Fullname = r.FormValue("fullname")
+	user.CreatedAt = time.Now()
+	bytePassword := []byte(r.FormValue("password"))
 	hashPassword, err := bcrypt.GenerateFromPassword(bytePassword, bcrypt.DefaultCost)
     if err != nil {
 		response := a.ErrorResponse("Error generating hash password", err)
@@ -158,7 +154,47 @@ func InsertUser(w http.ResponseWriter, r *http.Request) {
 	}
 	user.Password = string(hashPassword)
 
-	_, err = stmt.Exec(user.UserID, user.Username, user.Password, user.Fullname, user.Avatar)
+	avatarFile, fileHeader, err := r.FormFile("avatar")
+	if err != nil {
+		response := a.ErrorResponse("Failed to get upload file", err)
+		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+	defer avatarFile.Close()
+
+	secretKey := os.Getenv("AWS_SECRET_KEY")
+	secretID := os.Getenv("AWS_SECRET_ID")
+	region := os.Getenv("AWS_REGION")
+	session, err := session.NewSession(&aws.Config{
+		Region: aws.String(region),
+		Credentials: credentials.NewStaticCredentials(secretID, secretKey, ""),
+	})
+	if err != nil {
+		response := a.ErrorResponse("Failed to set session on AWS S3", err)
+		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+
+	fileName, err := a.UploadImageToS3(session, avatarFile, fileHeader)
+	if err != nil {
+		response := a.ErrorResponse("Failed to upload Image to S3", err)
+		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+	user.Avatar = fileName
+
+	stmt, err := db.Prepare("INSERT INTO users(userID, username, password, fullName, avatar, createdAt, modifiedAt) VALUES(?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		response := a.ErrorResponse("Error in query", err)
+		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+
+	_, err = stmt.Exec(user.UserID, user.Username, user.Password, user.Fullname, user.Avatar, user.CreatedAt, user.ModifiedAt)
 	if err != nil {
 		response := a.ErrorResponse("Error in insert", err)
 		w.WriteHeader(500)
@@ -186,9 +222,9 @@ func UpdateUser(w http.ResponseWriter, r *http.Request)  {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "multipart/form-data")
 
-	stmt, err := db.Prepare("UPDATE users SET userID = ?, username = ?, password = ?, fullName = ?, avatar = ? WHERE userID = ?")
+	stmt, err := db.Prepare("UPDATE users SET username = ?, password = ?, fullName = ?, avatar = ?, modifiedAt = ? WHERE userID = ?")
 	if err != nil {
 		response := a.ErrorResponse("Error in query", err)
 		w.WriteHeader(500)
@@ -196,16 +232,56 @@ func UpdateUser(w http.ResponseWriter, r *http.Request)  {
 		return
 	}
 
+	vars := mux.Vars(r)
 	var user u.User
-	error := json.NewDecoder(r.Body).Decode(&user)
-	if error != nil {
-		response := a.ErrorResponse("Error in body fields", error)
+	maxSize := int64(3 * 1024 * 1024)
+	errorParse := r.ParseMultipartForm(maxSize)
+	if errorParse != nil {
+		response := a.ErrorResponse("Failed to parse multipart form", errorParse)
 		w.WriteHeader(500)
 		w.Write(response)
 		return
 	}
+	user.Username = r.FormValue("username")
+	user.Fullname = r.FormValue("fullname")
+	user.ModifiedAt = time.Now()
+	if r.FormValue("hasAvatar") == "true" {
+		avatarFile, fileHeader, err := r.FormFile("avatar")
+		if err != nil {
+			response := a.ErrorResponse("Failed to get upload file", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		defer avatarFile.Close()
 
-	bytePassword := []byte(user.Password)
+		secretKey := os.Getenv("AWS_SECRET_KEY")
+		secretID := os.Getenv("AWS_SECRET_ID")
+		region := os.Getenv("AWS_REGION")
+		session, err := session.NewSession(&aws.Config{
+			Region: aws.String(region),
+			Credentials: credentials.NewStaticCredentials(secretID, secretKey, ""),
+		})
+		if err != nil {
+			response := a.ErrorResponse("Failed to set session on AWS S3", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+
+		fileName, err := a.UploadImageToS3(session, avatarFile, fileHeader)
+		if err != nil {
+			response := a.ErrorResponse("Failed to upload Image to S3", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		user.Avatar = fileName
+	} else if r.FormValue("hasAvatar") == "false" {
+		user.Avatar = ""
+	}
+
+	bytePassword := []byte(r.FormValue("password"))
 	hashPassword, err := bcrypt.GenerateFromPassword(bytePassword, bcrypt.DefaultCost)
 	if err != nil {
 		response := a.ErrorResponse("Error generating hash password", err)
@@ -215,7 +291,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request)  {
 	}
 	user.Password = string(hashPassword)
 
-	_, err = stmt.Exec(user.UserID, user.Username, user.Password, user.Fullname, user.Avatar, user.UserID)
+	_, err = stmt.Exec(user.Username, user.Password, user.Fullname, user.Avatar, user.ModifiedAt, vars["id"])
 	if err != nil {
 		response := a.ErrorResponse("Error in update", err)
 		w.WriteHeader(500)
@@ -243,7 +319,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request)  {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
-	w.Header().Set("Content-Type", "application/json")
+	userID := mux.Vars(r)
 
 	stmt, err := db.Prepare("DELETE FROM users WHERE userID = ?")
 	if err != nil {
@@ -253,16 +329,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request)  {
 		return
 	}
 
-	var userid u.User
-	error := json.NewDecoder(r.Body).Decode(&userid)
-	if error != nil {
-		response := a.ErrorResponse("Error in fields", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
-	}
-
-	_, err = stmt.Exec(userid.UserID)
+	_, err = stmt.Exec(userID["id"])
 	if err != nil {
 		response := a.ErrorResponse("Error in delete", err)
 		w.WriteHeader(500)

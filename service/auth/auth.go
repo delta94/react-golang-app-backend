@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -53,13 +54,18 @@ func AutenticationJWT(w http.ResponseWriter, r *http.Request)  {
 
 	var user u.User
 	for query.Next() {
-		err = query.Scan(&user.UserID, &user.Username, &user.Password, &user.Fullname, &user.Avatar)
+		var createdAt []uint8
+		var modifiedAt []uint8
+		err = query.Scan(&user.UserID, &user.Username, &user.Password, &user.Fullname, &user.Avatar, &createdAt, &modifiedAt)
 		if err != nil {
 			response := a.ErrorResponse("Error in select", err)
+			fmt.Println(err)
 			w.WriteHeader(500)
 			w.Write(response)
 			return
 		}
+		user.CreatedAt, _ = a.ConvertToTime(createdAt)
+		user.ModifiedAt, _ = a.ConvertToTime(modifiedAt)
 	}
 
 	bytePassword := []byte(user.Password)
@@ -100,7 +106,7 @@ func SignUp(w http.ResponseWriter, r *http.Request)  {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "multipart/form-data")
 
 	maxSize := int64(3 * 1024 * 1024)
 	err := r.ParseMultipartForm(maxSize)

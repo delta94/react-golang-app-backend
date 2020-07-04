@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	"github.com/segmentio/ksuid"
 
@@ -74,19 +75,11 @@ func SelectProduct(w http.ResponseWriter, r *http.Request) {
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
 	w.Header().Set("Content-Type", "application/json")
+	prodID := mux.Vars(r)
 
-	var product u.Product
-	error := json.NewDecoder(r.Body).Decode(&product)
-	if error != nil {
-		response := a.ErrorResponse("Error in body fields", error)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
-	}
-
-	selectDB, err := db.Query("SELECT * FROM products WHERE productID = ?", product.ProductID)
+	selectDB, err := db.Query("SELECT * FROM products WHERE productID = ?", prodID["id"])
 	if err != nil {
-		response := a.ErrorResponse("Error in query", error)
+		response := a.ErrorResponse("Error in query", err)
 		w.WriteHeader(500)
 		w.Write(response)
 		return
@@ -98,7 +91,7 @@ func SelectProduct(w http.ResponseWriter, r *http.Request) {
 		var product u.Product
 		err = selectDB.Scan(&product.ProductID, &product.Name, &product.Value, &product.Info, &product.CategoryID)
 		if err != nil {
-			response := a.ErrorResponse("Error in select", error)
+			response := a.ErrorResponse("Error in select", err)
 			w.WriteHeader(500)
 			w.Write(response)
 			return
@@ -161,54 +154,6 @@ func InsertProduct(w http.ResponseWriter, r *http.Request)  {
 	w.Write(response)
 }
 
-//DeleteProduct from database
-func DeleteProduct(w http.ResponseWriter, r *http.Request)  {
-	auth := a.VerifyToken(r)
-	if !auth {
-		var err error
-		response := a.ErrorResponse("Unauthorized", err)
-		w.WriteHeader(401)
-		w.Write(response)
-		return
-	}
-	
-	godotenv.Load(".env")
-	dbString := os.Getenv("DBSTRING")
-	db := d.CreateConnection(dbString)
-	w.Header().Set("Content-Type", "application/json")
-
-	stmt, err := db.Prepare("DELETE FROM products WHERE productID = ?")
-	if err != nil {
-		response := a.ErrorResponse("Error in query", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
-	}
-
-	var product u.Product
-	error := json.NewDecoder(r.Body).Decode(&product)
-	if error != nil {
-		response := a.ErrorResponse("Error in fields", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
-	}
-
-	_, err = stmt.Exec(product.ProductID)
-	if err != nil {
-		response := a.ErrorResponse("Error in delete", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
-	}
-
-	response := a.SucessResponse("Product deleted from database")
-	w.WriteHeader(200)
-	w.Write(response)
-
-	defer db.Close()
-}
-
 //UpdateProduct in database
 func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	auth := a.VerifyToken(r)
@@ -254,4 +199,44 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	response := a.SucessResponse("Product updated in the database")
 	w.WriteHeader(200)
 	w.Write(response)
+}
+
+//DeleteProduct from database
+func DeleteProduct(w http.ResponseWriter, r *http.Request)  {
+	auth := a.VerifyToken(r)
+	if !auth {
+		var err error
+		response := a.ErrorResponse("Unauthorized", err)
+		w.WriteHeader(401)
+		w.Write(response)
+		return
+	}
+	
+	godotenv.Load(".env")
+	dbString := os.Getenv("DBSTRING")
+	db := d.CreateConnection(dbString)
+	w.Header().Set("Content-Type", "application/json")
+	prodID := mux.Vars(r)
+
+	stmt, err := db.Prepare("DELETE FROM products WHERE productID = ?")
+	if err != nil {
+		response := a.ErrorResponse("Error in query", err)
+		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+
+	_, err = stmt.Exec(prodID["id"])
+	if err != nil {
+		response := a.ErrorResponse("Error in delete", err)
+		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+
+	response := a.SucessResponse("Product deleted from database")
+	w.WriteHeader(200)
+	w.Write(response)
+
+	defer db.Close()
 }

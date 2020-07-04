@@ -18,6 +18,7 @@ func main() {
 	dbString := os.Getenv("DBSTRING")
 	port := os.Getenv("PORT")
 	c.CreateConnection(dbString)
+
 	router := r.Middleware()
 	handler := cors.AllowAll().Handler(router)
 

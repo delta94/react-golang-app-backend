@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -89,12 +90,13 @@ func ResponseWithToken(msg string, token string, user interface{}) (resp []byte)
 
 //VerifyToken verification of JWT token
 func VerifyToken(r *http.Request) (status bool) {
-	godotenv.Load(".env")
-	jwtKey := []byte(os.Getenv("JWT_KEY"))
 	auth := strings.Replace(r.Header.Get("Authorization"), "Bearer ", "", 1)
-	if auth == "" {
+	if auth == "undefined" {
 		return false
 	}
+	godotenv.Load(".env")
+	jwtKey := []byte(os.Getenv("JWT_KEY"))
+
 	token, _ := jwt.Parse(auth, func(token *jwt.Token) (interface{}, error) {
         if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
             return nil, fmt.Errorf("There was an error")
@@ -130,4 +132,15 @@ func UploadImageToS3(ses *session.Session, file multipart.File, fileHeader *mult
 		return "", err
 	}
 	return fileName, err
+}
+
+//ConvertToTime get slice of uint8 to return time.Time
+func ConvertToTime(timeInt []uint8) (time.Time, error ) {
+	string := string(timeInt)
+	build := string[0:10] + "T" + string[11:] + "Z"
+	conv, err := time.Parse(time.RFC3339, build)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return conv, nil
 }
