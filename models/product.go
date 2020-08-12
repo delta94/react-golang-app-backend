@@ -19,6 +19,8 @@ type Product struct {
 	Name			string				`db:"productName" json:"Name"`
 	Value			float64				`db:"productValue" json:"Value"`
 	Info			*types.JSONText		`db:"productInfo" json:"Info"`
+	FileAvatar		string				`db:"fileAvatar" json:"fileAvatar"`
+	AvatarURL		string				`db:"avatarUrl" json:"avatarUrl`
 	CategoryID		int					`db:"categoryID" json:"CategoryID"`
 	CreatedAt		time.Time			`db:"createdAt" json:"createdAt"`
 	ModifiedAt		time.Time			`db:"modifiedAt" json:"modifiedAt"`

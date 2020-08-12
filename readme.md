@@ -11,3 +11,9 @@
 - Users
 
 GET:
+
+### Servidor Local
+
+- Utiliza o package Gin, para realizar o build da aplicação;
+- go get github.com/codegangsta/gin // Instalar o package do Gin;
+- gin --appPort 4000 --all -i run main.go // Rodar a aplicação na porta 4000;

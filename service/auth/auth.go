@@ -56,7 +56,7 @@ func AutenticationJWT(w http.ResponseWriter, r *http.Request)  {
 	for query.Next() {
 		var createdAt []uint8
 		var modifiedAt []uint8
-		err = query.Scan(&user.UserID, &user.Username, &user.Password, &user.Fullname, &user.Avatar, &createdAt, &modifiedAt)
+		err = query.Scan(&user.UserID, &user.Username, &user.Password, &user.Fullname, &user.FileAvatar, &user.AvatarURL, &createdAt, &modifiedAt)
 		if err != nil {
 			response := a.ErrorResponse("Error in select", err)
 			fmt.Println(err)
@@ -122,7 +122,7 @@ func SignUp(w http.ResponseWriter, r *http.Request)  {
 	user.Username = r.FormValue("username")
 	user.Fullname = r.FormValue("fullname")
 
-	stmt, err := db.Prepare("INSERT INTO users(userID, username, password, fullName, avatar, createdAt, modifiedAt) VALUES(?, ?, ?, ?, ?, ?, ?)")
+	stmt, err := db.Prepare("INSERT INTO users(userID, username, password, fullName, fileAvatar, avatarUrl, createdAt, modifiedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		response := a.ErrorResponse("Error in query", err)
 		w.WriteHeader(500)
@@ -164,16 +164,17 @@ func SignUp(w http.ResponseWriter, r *http.Request)  {
 		return
 	}
 
-	fileName, err := a.UploadImageToS3(session, avatarFile, fileHeader)
+	fileName, imageURL, err := a.UploadImageToS3(session, avatarFile, fileHeader)
 	if err != nil {
 		response := a.ErrorResponse("Failed to upload Image to S3", err)
 		w.WriteHeader(500)
 		w.Write(response)
 		return
 	}
-	user.Avatar = fileName
+	user.FileAvatar = fileName
+	user.AvatarURL = imageURL
 
-	_, err = stmt.Exec(user.UserID, user.Username, user.Password, user.Fullname, user.Avatar, user.CreatedAt, user.ModifiedAt)
+	_, err = stmt.Exec(user.UserID, user.Username, user.Password, user.Fullname, user.FileAvatar, user.AvatarURL, user.CreatedAt, user.ModifiedAt)
 	if err != nil {
 		response := a.ErrorResponse("Error in insert", err)
 		w.WriteHeader(500)

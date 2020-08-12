@@ -48,7 +48,7 @@ func SelectListOfUser(w http.ResponseWriter, r *http.Request) {
 		var user u.User
 		var createdAt []uint8
 		var modifiedAt []uint8
-		err = selectDB.Scan(&user.UserID, &user.Username, &user.Password, &user.Fullname, &user.Avatar, &createdAt, &modifiedAt)
+		err = selectDB.Scan(&user.UserID, &user.Username, &user.Password, &user.Fullname, &user.FileAvatar, &user.AvatarURL, &createdAt, &modifiedAt)
 		if err != nil {
 			response := a.ErrorResponse("Error in select", err)
 			fmt.Println(err)
@@ -77,12 +77,19 @@ func SelectUser(w http.ResponseWriter, r *http.Request)  {
 		w.Write(response)
 		return
 	}
+	vars := mux.Vars(r)
+	if(vars["id"] == "") {
+		var err error
+		response := a.ErrorResponse("Missing field user id", err)
+		w.WriteHeader(400)
+		w.Write(response)
+		return
+	}
 
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
 
-	vars := mux.Vars(r)
 	selectDB, err := db.Query("SELECT * FROM users WHERE userID = ?", vars["id"])
 	if err != nil {
 		response := a.ErrorResponse("Error in query", err)
@@ -97,7 +104,7 @@ func SelectUser(w http.ResponseWriter, r *http.Request)  {
 		var user u.User
 		var createdAt []uint8
 		var modifiedAt []uint8
-		err = selectDB.Scan(&user.UserID, &user.Username, &user.Password, &user.Fullname, &user.Avatar, &createdAt, &modifiedAt)
+		err = selectDB.Scan(&user.UserID, &user.Username, &user.Password, &user.Fullname, &user.FileAvatar, &user.AvatarURL, &createdAt, &modifiedAt)
 		if err != nil {
 			response := a.ErrorResponse("Error in select", err)
 			w.WriteHeader(500)
@@ -154,39 +161,45 @@ func InsertUser(w http.ResponseWriter, r *http.Request) {
 	}
 	user.Password = string(hashPassword)
 
-	avatarFile, fileHeader, err := r.FormFile("avatar")
-	if err != nil {
-		response := a.ErrorResponse("Failed to get upload file", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
-	}
-	defer avatarFile.Close()
+	if r.FormValue("hasAvatar") == "true" {
+		avatarFile, fileHeader, err := r.FormFile("avatar")
+		if err != nil {
+			response := a.ErrorResponse("Failed to get upload file", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		defer avatarFile.Close()
 
-	secretKey := os.Getenv("AWS_SECRET_KEY")
-	secretID := os.Getenv("AWS_SECRET_ID")
-	region := os.Getenv("AWS_REGION")
-	session, err := session.NewSession(&aws.Config{
-		Region: aws.String(region),
-		Credentials: credentials.NewStaticCredentials(secretID, secretKey, ""),
-	})
-	if err != nil {
-		response := a.ErrorResponse("Failed to set session on AWS S3", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
+		secretKey := os.Getenv("AWS_SECRET_KEY")
+		secretID := os.Getenv("AWS_SECRET_ID")
+		region := os.Getenv("AWS_REGION")
+		session, err := session.NewSession(&aws.Config{
+			Region: aws.String(region),
+			Credentials: credentials.NewStaticCredentials(secretID, secretKey, ""),
+		})
+		if err != nil {
+			response := a.ErrorResponse("Failed to set session on AWS S3", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+
+		fileName, imageURL, err := a.UploadImageToS3(session, avatarFile, fileHeader)
+		if err != nil {
+			response := a.ErrorResponse("Failed to upload Image to S3", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		user.FileAvatar = fileName
+		user.AvatarURL = imageURL
+	} else if r.FormValue("hasAvatar") == "false" {
+		user.FileAvatar = ""
+		user.AvatarURL = ""
 	}
 
-	fileName, err := a.UploadImageToS3(session, avatarFile, fileHeader)
-	if err != nil {
-		response := a.ErrorResponse("Failed to upload Image to S3", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
-	}
-	user.Avatar = fileName
-
-	stmt, err := db.Prepare("INSERT INTO users(userID, username, password, fullName, avatar, createdAt, modifiedAt) VALUES(?, ?, ?, ?, ?, ?, ?)")
+	stmt, err := db.Prepare("INSERT INTO users(userID, username, password, fullName, fileAvatar, avatarUrl, createdAt, modifiedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		response := a.ErrorResponse("Error in query", err)
 		w.WriteHeader(500)
@@ -194,7 +207,7 @@ func InsertUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = stmt.Exec(user.UserID, user.Username, user.Password, user.Fullname, user.Avatar, user.CreatedAt, user.ModifiedAt)
+	_, err = stmt.Exec(user.UserID, user.Username, user.Password, user.Fullname, user.FileAvatar, user.AvatarURL, user.CreatedAt, user.ModifiedAt)
 	if err != nil {
 		response := a.ErrorResponse("Error in insert", err)
 		w.WriteHeader(500)
@@ -224,7 +237,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request)  {
 	db := d.CreateConnection(dbString)
 	w.Header().Set("Content-Type", "multipart/form-data")
 
-	stmt, err := db.Prepare("UPDATE users SET username = ?, password = ?, fullName = ?, avatar = ?, modifiedAt = ? WHERE userID = ?")
+	stmt, err := db.Prepare("UPDATE users SET username = ?, password = ?, fullName = ?, fileAvatar = ?, avatarUrl = ?, modifiedAt = ? WHERE userID = ?")
 	if err != nil {
 		response := a.ErrorResponse("Error in query", err)
 		w.WriteHeader(500)
@@ -269,16 +282,18 @@ func UpdateUser(w http.ResponseWriter, r *http.Request)  {
 			return
 		}
 
-		fileName, err := a.UploadImageToS3(session, avatarFile, fileHeader)
+		fileName, imageURL, err := a.UploadImageToS3(session, avatarFile, fileHeader)
 		if err != nil {
 			response := a.ErrorResponse("Failed to upload Image to S3", err)
 			w.WriteHeader(500)
 			w.Write(response)
 			return
 		}
-		user.Avatar = fileName
+		user.FileAvatar = fileName
+		user.AvatarURL = imageURL
 	} else if r.FormValue("hasAvatar") == "false" {
-		user.Avatar = ""
+		user.FileAvatar = ""
+		user.AvatarURL = ""
 	}
 
 	bytePassword := []byte(r.FormValue("password"))
@@ -291,7 +306,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request)  {
 	}
 	user.Password = string(hashPassword)
 
-	_, err = stmt.Exec(user.Username, user.Password, user.Fullname, user.Avatar, user.ModifiedAt, vars["id"])
+	_, err = stmt.Exec(user.Username, user.Password, user.Fullname, user.FileAvatar, user.AvatarURL, user.ModifiedAt, vars["id"])
 	if err != nil {
 		response := a.ErrorResponse("Error in update", err)
 		w.WriteHeader(500)
@@ -315,11 +330,18 @@ func DeleteUser(w http.ResponseWriter, r *http.Request)  {
 		w.Write(response)
 		return
 	}
+	userID := mux.Vars(r)
+	if(userID["id"] == "") {
+		var err error
+		response := a.ErrorResponse("Missing field user id", err)
+		w.WriteHeader(400)
+		w.Write(response)
+		return
+	}
 	
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
-	userID := mux.Vars(r)
 
 	stmt, err := db.Prepare("DELETE FROM users WHERE userID = ?")
 	if err != nil {

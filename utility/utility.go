@@ -108,9 +108,10 @@ func VerifyToken(r *http.Request) (status bool) {
 }
 
 //UploadImageToS3 - get session and file to upload to AWS S3
-func UploadImageToS3(ses *session.Session, file multipart.File, fileHeader *multipart.FileHeader) (string, error) {
+func UploadImageToS3(ses *session.Session, file multipart.File, fileHeader *multipart.FileHeader) (string, string, error) {
 	godotenv.Load(".env")
 	bucket := os.Getenv("AWS_BUCKET")
+	region := os.Getenv("AWS_REGION")
 	size := fileHeader.Size
 	buffer := make([]byte, size)
 	file.Read(buffer)
@@ -129,9 +130,10 @@ func UploadImageToS3(ses *session.Session, file multipart.File, fileHeader *mult
 	})
 	if err != nil {
 		fmt.Println(err)
-		return "", err
+		return "", "", err
 	}
-	return fileName, err
+	imageURL := "https://" + bucket + "." + "s3-" + region + ".amazonaws.com/" + fileName
+	return fileName, imageURL, err
 }
 
 //ConvertToTime get slice of uint8 to return time.Time

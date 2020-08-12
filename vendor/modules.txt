@@ -1,3 +1,5 @@
+# github.com/0xAX/notificator v0.0.0-20191016112426-3962a5ea8da1
+## explicit
 # github.com/aws/aws-sdk-go v1.33.1
 ## explicit
 github.com/aws/aws-sdk-go/aws
@@ -43,6 +45,10 @@ github.com/aws/aws-sdk-go/service/s3
 github.com/aws/aws-sdk-go/service/s3/internal/arn
 github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/service/sts/stsiface
+# github.com/codegangsta/envy v0.0.0-20141216192214-4b78388c8ce4
+## explicit
+# github.com/codegangsta/gin v0.0.0-20171026143024-cafe2ce98974
+## explicit
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 # github.com/dgrijalva/jwt-go v3.2.0+incompatible
@@ -67,6 +73,8 @@ github.com/jmoiron/sqlx/types
 github.com/joho/godotenv
 # github.com/kr/pretty v0.1.0
 ## explicit
+# github.com/mattn/go-shellwords v1.0.10
+## explicit
 # github.com/rs/cors v1.7.0
 ## explicit
 github.com/rs/cors
@@ -81,6 +89,10 @@ golang.org/x/crypto/blowfish
 ## explicit
 # gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127
 ## explicit
+# gopkg.in/urfave/cli.v1 v1.20.0
+## explicit
 # labix.org/v2/mgo v0.0.0-20140701140051-000000000287
 ## explicit
 labix.org/v2/mgo/bson
+# launchpad.net/gocheck v0.0.0-20140225173054-000000000087
+## explicit

@@ -18,4 +18,5 @@ require (
 	golang.org/x/text v0.3.2 // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 	labix.org/v2/mgo v0.0.0-20140701140051-000000000287
+	launchpad.net/gocheck v0.0.0-20140225173054-000000000087 // indirect
 )

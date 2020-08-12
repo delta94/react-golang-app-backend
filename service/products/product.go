@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -43,7 +45,7 @@ func SelectProductList(w http.ResponseWriter, r *http.Request)  {
 	for selectDB.Next() {
 		var product u.Product
 
-		err = selectDB.Scan(&product.ProductID, &product.Name, &product.Value, &product.Info, &product.CategoryID)
+		err = selectDB.Scan(&product.ProductID, &product.Name, &product.Value, &product.Info, &product.CategoryID, &product.FileAvatar, &product.AvatarURL)
 		if err != nil {
 			response := a.ErrorResponse("Error in select", err)
 			w.WriteHeader(500)
@@ -70,12 +72,19 @@ func SelectProduct(w http.ResponseWriter, r *http.Request) {
 		w.Write(response)
 		return
 	}
+	prodID := mux.Vars(r)
+	if(prodID["id"] == "") {
+		var err error
+		response := a.ErrorResponse("Missing field product id", err)
+		w.WriteHeader(400)
+		w.Write(response)
+		return
+	}
 	
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
 	w.Header().Set("Content-Type", "application/json")
-	prodID := mux.Vars(r)
 
 	selectDB, err := db.Query("SELECT * FROM products WHERE productID = ?", prodID["id"])
 	if err != nil {
@@ -89,7 +98,7 @@ func SelectProduct(w http.ResponseWriter, r *http.Request) {
 	var res = []u.Product{}
 	for selectDB.Next() {
 		var product u.Product
-		err = selectDB.Scan(&product.ProductID, &product.Name, &product.Value, &product.Info, &product.CategoryID)
+		err = selectDB.Scan(&product.ProductID, &product.Name, &product.Value, &product.Info, &product.CategoryID, &product.FileAvatar, &product.AvatarURL)
 		if err != nil {
 			response := a.ErrorResponse("Error in select", err)
 			w.WriteHeader(500)
@@ -121,6 +130,15 @@ func InsertProduct(w http.ResponseWriter, r *http.Request)  {
 	db := d.CreateConnection(dbString)
 	w.Header().Set("Content-Type", "application/json")
 
+	maxSize := int64(3 * 1024 * 1024)
+	err := r.ParseMultipartForm(maxSize)
+	if err != nil {
+		response := a.ErrorResponse("Failed to parse multipart form", err)
+		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+
 	stmt, err := db.Prepare("INSERT INTO products(productID, productName, productValue, productInfo, categoryID) VALUES (?, ?, ?, ?, ?)")
 	if err != nil {
 		response := a.ErrorResponse("Error in query", err)
@@ -130,16 +148,15 @@ func InsertProduct(w http.ResponseWriter, r *http.Request)  {
 	}
 
 	var product u.Product
-	error := json.NewDecoder(r.Body).Decode(&product)
-	if error != nil {
-		response := a.ErrorResponse("Error in body fields", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
-	}
-
 	genIDProduct := ksuid.New()
 	product.ProductID = genIDProduct
+	product.CreatedAt = time.Now()
+	product.Name = r.FormValue("name")
+	product.Value, _ = strconv.ParseFloat(r.FormValue("value"), 64)
+	product.CategoryID, _ = strconv.Atoi(r.FormValue("category"))
+	product.Info = json.RawMessage(r.FormValue("info"))
+
+
 	_, err = stmt.Exec(product.ProductID, product.Name, product.Value, product.Info, product.CategoryID)
 	if err != nil {
 		response := a.ErrorResponse("Error in insert", err)
