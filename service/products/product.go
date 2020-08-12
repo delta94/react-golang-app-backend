@@ -154,7 +154,7 @@ func InsertProduct(w http.ResponseWriter, r *http.Request)  {
 	product.Name = r.FormValue("name")
 	product.Value, _ = strconv.ParseFloat(r.FormValue("value"), 64)
 	product.CategoryID, _ = strconv.Atoi(r.FormValue("category"))
-	product.Info = json.RawMessage(r.FormValue("info"))
+	product.Info = []byte(r.FormValue("info"))
 
 
 	_, err = stmt.Exec(product.ProductID, product.Name, product.Value, product.Info, product.CategoryID)
