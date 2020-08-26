@@ -11,6 +11,9 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/segmentio/ksuid"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
 	u "github.com/marceloOliveira/siteGolang/models"
 	d "github.com/marceloOliveira/siteGolang/server"
 	a "github.com/marceloOliveira/siteGolang/utility"
@@ -45,7 +48,7 @@ func SelectProductList(w http.ResponseWriter, r *http.Request)  {
 	for selectDB.Next() {
 		var product u.Product
 
-		err = selectDB.Scan(&product.ProductID, &product.Name, &product.Value, &product.Info, &product.CategoryID, &product.FileAvatar, &product.AvatarURL)
+		err = selectDB.Scan(&product.ProductID, &product.Name, &product.Value, &product.Info, &product.CategoryID, &product.FileAvatar, &product.AvatarURL, &product.CreatedAt, &product.ModifiedAt)
 		if err != nil {
 			response := a.ErrorResponse("Error in select", err)
 			w.WriteHeader(500)
@@ -84,7 +87,7 @@ func SelectProduct(w http.ResponseWriter, r *http.Request) {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
-	w.Header().Set("Content-Type", "application/json")
+    w.Header().Set("Content-Type", "application/json")
 
 	selectDB, err := db.Query("SELECT * FROM products WHERE productID = ?", prodID["id"])
 	if err != nil {
@@ -98,7 +101,7 @@ func SelectProduct(w http.ResponseWriter, r *http.Request) {
 	var res = []u.Product{}
 	for selectDB.Next() {
 		var product u.Product
-		err = selectDB.Scan(&product.ProductID, &product.Name, &product.Value, &product.Info, &product.CategoryID, &product.FileAvatar, &product.AvatarURL)
+		err = selectDB.Scan(&product.ProductID, &product.Name, &product.Value, &product.Info, &product.CategoryID, &product.FileAvatar, &product.AvatarURL, &product.CreatedAt, &product.ModifiedAt)
 		if err != nil {
 			response := a.ErrorResponse("Error in select", err)
 			w.WriteHeader(500)
@@ -139,7 +142,7 @@ func InsertProduct(w http.ResponseWriter, r *http.Request)  {
 		return
 	}
 
-	stmt, err := db.Prepare("INSERT INTO products(productID, productName, productValue, productInfo, categoryID) VALUES (?, ?, ?, ?, ?)")
+	stmt, err := db.Prepare("INSERT INTO products(productID, productName, productValue, fileAvatar, avatarUrl, productInfo, categoryID, createdAt, modifiedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		response := a.ErrorResponse("Error in query", err)
 		w.WriteHeader(500)
@@ -154,10 +157,43 @@ func InsertProduct(w http.ResponseWriter, r *http.Request)  {
 	product.Name = r.FormValue("name")
 	product.Value, _ = strconv.ParseFloat(r.FormValue("value"), 64)
 	product.CategoryID, _ = strconv.Atoi(r.FormValue("category"))
-	product.Info = []byte(r.FormValue("info"))
+    product.Info = []byte(r.FormValue("info"))
+    
+    avatarFile, fileHeader, err := r.FormFile("avatar")
+		if err != nil {
+			response := a.ErrorResponse("Failed to get upload file", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		defer avatarFile.Close()
+
+		secretKey := os.Getenv("AWS_SECRET_KEY")
+		secretID := os.Getenv("AWS_SECRET_ID")
+		region := os.Getenv("AWS_REGION")
+		session, err := session.NewSession(&aws.Config{
+			Region: aws.String(region),
+			Credentials: credentials.NewStaticCredentials(secretID, secretKey, ""),
+		})
+		if err != nil {
+			response := a.ErrorResponse("Failed to set session on AWS S3", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+
+		fileName, imageURL, err := a.UploadImageToS3(session, avatarFile, fileHeader)
+		if err != nil {
+			response := a.ErrorResponse("Failed to upload Image to S3", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		product.FileAvatar = fileName
+		product.AvatarURL = imageURL
 
 
-	_, err = stmt.Exec(product.ProductID, product.Name, product.Value, product.Info, product.CategoryID)
+	_, err = stmt.Exec(product.ProductID, product.Name, product.Value, product.FileAvatar, product.AvatarURL, product.Info, product.CategoryID, product.CreatedAt, product.ModifiedAt)
 	if err != nil {
 		response := a.ErrorResponse("Error in insert", err)
 		w.WriteHeader(500)
@@ -227,13 +263,20 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request)  {
 		w.WriteHeader(401)
 		w.Write(response)
 		return
+    }
+    productID := mux.Vars(r)
+	if(productID["id"] == "") {
+		var err error
+		response := a.ErrorResponse("Missing field product id", err)
+		w.WriteHeader(400)
+		w.Write(response)
+		return
 	}
 	
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
 	w.Header().Set("Content-Type", "application/json")
-	prodID := mux.Vars(r)
 
 	stmt, err := db.Prepare("DELETE FROM products WHERE productID = ?")
 	if err != nil {
@@ -243,7 +286,7 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request)  {
 		return
 	}
 
-	_, err = stmt.Exec(prodID["id"])
+	_, err = stmt.Exec(productID["id"])
 	if err != nil {
 		response := a.ErrorResponse("Error in delete", err)
 		w.WriteHeader(500)
