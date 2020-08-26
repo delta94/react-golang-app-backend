@@ -237,14 +237,6 @@ func UpdateUser(w http.ResponseWriter, r *http.Request)  {
 	db := d.CreateConnection(dbString)
 	w.Header().Set("Content-Type", "multipart/form-data")
 
-	stmt, err := db.Prepare("UPDATE users SET username = ?, password = ?, fullName = ?, fileAvatar = ?, avatarUrl = ?, modifiedAt = ? WHERE userID = ?")
-	if err != nil {
-		response := a.ErrorResponse("Error in query", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
-	}
-
 	vars := mux.Vars(r)
 	var user u.User
 	maxSize := int64(3 * 1024 * 1024)
@@ -306,14 +298,39 @@ func UpdateUser(w http.ResponseWriter, r *http.Request)  {
 	}
 	user.Password = string(hashPassword)
 
-	_, err = stmt.Exec(user.Username, user.Password, user.Fullname, user.FileAvatar, user.AvatarURL, user.ModifiedAt, vars["id"])
-	if err != nil {
-		response := a.ErrorResponse("Error in update", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
+	if r.FormValue("hasAvatar") == "true"  {
+		stmt, err := db.Prepare("UPDATE users SET username = ?, password = ?, fullName = ?, fileAvatar = ?, avatarUrl = ?, modifiedAt = ? WHERE userID = ?")
+		if err != nil {
+			response := a.ErrorResponse("Error in query", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		_, err = stmt.Exec(user.Username, user.Password, user.Fullname, user.FileAvatar, user.AvatarURL, user.ModifiedAt, vars["id"])
+		if err != nil {
+			response := a.ErrorResponse("Error in update", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		defer db.Close()
+	} else if r.FormValue("hasAvatar") == "false"  {
+		stmt, err := db.Prepare("UPDATE users SET username = ?, password = ?, fullName = ?, modifiedAt = ? WHERE userID = ?")
+		if err != nil {
+			response := a.ErrorResponse("Error in query", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+			_, err = stmt.Exec(user.Username, user.Password, user.Fullname, user.ModifiedAt, vars["id"])
+		if err != nil {
+			response := a.ErrorResponse("Error in update", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		defer db.Close()
 	}
-	defer db.Close()
 
 	response := a.SucessResponse("User updated in the database")
 	w.WriteHeader(200)

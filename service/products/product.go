@@ -1,7 +1,6 @@
 package product
 
 import (
-	"encoding/json"
 	"net/http"
 	"os"
 	"strconv"
@@ -33,7 +32,6 @@ func SelectProductList(w http.ResponseWriter, r *http.Request)  {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
-	w.Header().Set("Content-Type", "application/json")
 
 	selectDB, err := db.Query("SELECT * FROM products")
 	if err != nil {
@@ -87,7 +85,6 @@ func SelectProduct(w http.ResponseWriter, r *http.Request) {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
-    w.Header().Set("Content-Type", "application/json")
 
 	selectDB, err := db.Query("SELECT * FROM products WHERE productID = ?", prodID["id"])
 	if err != nil {
@@ -131,7 +128,7 @@ func InsertProduct(w http.ResponseWriter, r *http.Request)  {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "multipart/form-data")
 
 	maxSize := int64(3 * 1024 * 1024)
 	err := r.ParseMultipartForm(maxSize)
@@ -146,6 +143,14 @@ func InsertProduct(w http.ResponseWriter, r *http.Request)  {
 	if err != nil {
 		response := a.ErrorResponse("Error in query", err)
 		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+
+	if(r.FormValue("name") == "" || r.FormValue("value") == "" || r.FormValue("category") == "" || r.FormValue("info") == "") {
+		var err error
+		response := a.ErrorResponse("Missing fields", err)
+		w.WriteHeader(400)
 		w.Write(response)
 		return
 	}
@@ -221,33 +226,105 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
-	w.Header().Set("Content-Type", "application/json")
-
-	stmt, err := db.Prepare("UPDATE products SET productID = ?, productName = ?, productValue = ?, productInfo = ?, categoryID = ? WHERE productID = ?")
+	w.Header().Set("Content-Type", "multipart/form-data")
+	
+	maxSize := int64(3 * 1024 * 1024)
+	err := r.ParseMultipartForm(maxSize)
 	if err != nil {
-		response := a.ErrorResponse("Error in query", err)
+		response := a.ErrorResponse("Failed to parse multipart form", err)
 		w.WriteHeader(500)
+		w.Write(response)
+		return
+	}
+
+	productID := mux.Vars(r)
+	if(productID["id"] == "" || r.FormValue("name") == "" || r.FormValue("value") == "" || r.FormValue("category") == "" || r.FormValue("info") == "") {
+		var err error
+		response := a.ErrorResponse("Missing fields", err)
+		w.WriteHeader(400)
 		w.Write(response)
 		return
 	}
 
 	var product u.Product
-	error := json.NewDecoder(r.Body).Decode(&product)
-	if error != nil {
-		response := a.ErrorResponse("Error in fields", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
+	product.ModifiedAt = time.Now()
+	product.Name = r.FormValue("name")
+	product.Value, _ = strconv.ParseFloat(r.FormValue("value"), 64)
+	product.CategoryID, _ = strconv.Atoi(r.FormValue("category"))
+	product.Info = []byte(r.FormValue("info"))
+	product.CreatedAt = time.Now()
+	
+	if r.FormValue("hasAvatar") == "true"  {
+		avatarFile, fileHeader, err := r.FormFile("avatar")
+		if err != nil {
+			response := a.ErrorResponse("Failed to get upload file", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		defer avatarFile.Close()
+	
+		secretKey := os.Getenv("AWS_SECRET_KEY")
+		secretID := os.Getenv("AWS_SECRET_ID")
+		region := os.Getenv("AWS_REGION")
+		session, err := session.NewSession(&aws.Config{
+			Region: aws.String(region),
+			Credentials: credentials.NewStaticCredentials(secretID, secretKey, ""),
+		})
+		if err != nil {
+			response := a.ErrorResponse("Failed to set session on AWS S3", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+	
+		fileName, imageURL, err := a.UploadImageToS3(session, avatarFile, fileHeader)
+		if err != nil {
+			response := a.ErrorResponse("Failed to upload Image to S3", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		product.FileAvatar = fileName
+		product.AvatarURL = imageURL
+	} else if r.FormValue("hasAvatar") == "false" {
+		product.FileAvatar = ""
+		product.AvatarURL = ""
 	}
-
-	_, err = stmt.Exec(product.ProductID, product.Name, product.Value, product.Info, product.CategoryID, product.ProductID)
-	if err != nil {
-		response := a.ErrorResponse("Error in update", err)
-		w.WriteHeader(500)
-		w.Write(response)
-		return
+    
+	if r.FormValue("hasAvatar") == "true" {
+		stmt, err := db.Prepare("UPDATE products SET productName = ?, productValue = ?, productInfo = ?, fileAvatar = ?, avatarUrl = ?, categoryID = ?, modifiedAt = ? WHERE productID = ?")
+		if err != nil {
+			response := a.ErrorResponse("Error in query", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		_, err = stmt.Exec(product.Name, product.Value, product.Info, product.FileAvatar, product.AvatarURL, product.CategoryID, product.ModifiedAt, productID["id"])
+		if err != nil {
+			response := a.ErrorResponse("Error in update", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		defer db.Close()
+	} else if r.FormValue("hasAvatar") == "false" {
+		stmt, err := db.Prepare("UPDATE products SET productName = ?, productValue = ?, productInfo = ?, categoryID = ?, modifiedAt = ? WHERE productID = ?")
+		if err != nil {
+			response := a.ErrorResponse("Error in query", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		_, err = stmt.Exec(product.Name, product.Value, product.Info, product.CategoryID, product.ModifiedAt, productID["id"])
+		if err != nil {
+			response := a.ErrorResponse("Error in update", err)
+			w.WriteHeader(500)
+			w.Write(response)
+			return
+		}
+		defer db.Close()
 	}
-	defer db.Close()
 
 	response := a.SucessResponse("Product updated in the database")
 	w.WriteHeader(200)
@@ -263,7 +340,8 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request)  {
 		w.WriteHeader(401)
 		w.Write(response)
 		return
-    }
+	}
+	
     productID := mux.Vars(r)
 	if(productID["id"] == "") {
 		var err error
@@ -276,7 +354,6 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request)  {
 	godotenv.Load(".env")
 	dbString := os.Getenv("DBSTRING")
 	db := d.CreateConnection(dbString)
-	w.Header().Set("Content-Type", "application/json")
 
 	stmt, err := db.Prepare("DELETE FROM products WHERE productID = ?")
 	if err != nil {

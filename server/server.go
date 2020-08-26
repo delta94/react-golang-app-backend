@@ -9,7 +9,7 @@ import (
 
 //CreateConnection to database
 func CreateConnection(connString string) (db *sql.DB)  {
-	db, err := sql.Open("mysql", connString)
+	db, err := sql.Open("mysql", connString + "?parseTime=true")
 	if err != nil {
 		log.Print("Error: ", err)
 	} else {
